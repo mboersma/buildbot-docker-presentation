@@ -36,7 +36,7 @@
 
 			<!-- Any section element inside of this container is displayed as a slide -->
 			<div class="slides">
-				<section>
+				<section id="title-page">
 					<h1>Buildbot in Docker</h1>
 					<h3>Docker Boulder meetup 1/29/2014</h3>
 					<img src="img/ouroboros.png">
@@ -45,17 +45,15 @@
 					</p>
 				</section>
 
-				<section>
+				<section id="motivations">
 					<h2>Why Bother?</h2>
 					<ul>
 						<li>Our <a href="http://buildbot.opdemand.com:8010/">buildbot</a> is working!</li>
 						<li>Would be some effort to recreate it</li>
 						<li>Python config files in GitHub, at least</li>
 						<li>CI is crucial for OpDemand</li>
+						<li>Docker Hack Day</li>
 					</ul>
-					<aside class="notes">
-						Oh hey, these are some notes. They'll be hidden in your presentation, but you can see them if you open the speaker notes window (hit 's' on your keyboard).
-					</aside>
 				</section>
 
 				<section>
@@ -70,289 +68,222 @@
 						is a solution that runs Docker inside a small VM.
 					</p>
 					<ul>
-						<li>Fast and simple, modulo Docker's own bugs</li>
+						<li>Fast and simple (modulo Docker's own bugs)</li>
 						<li>NOTE: Read "hard disk persistence" in README.md</li>
 					</ul>
 				</section>
 
 				<section>
 					<h2>Trusted Builds</h2>
-					- connect GitHub account to index.docker.io
-- add a *public* repository with a Dockerfile
-- post-commit hook triggers Docker image build
-- increases transparency -- see the Dockerfile
-- makes self-documenting
 					<ul>
-						<li></li>
-						<li></li>
+						<li>Connect your GitHub account to
+						<a href="https://index.docker.io/">index.docker.io</a></li>
+						<li>Add a <em>public</em> repository with a Dockerfile</li>
+						<li>A post-commit hook will trigger Docker image builds</li>
 					</ul>
 					<p>
-						Press <strong>ESC</strong> to enter the slide overview.
-					</p>
-					<p>
-						Hold down alt and click on any element to zoom in on it using <a href="http://lab.hakim.se/zoom-js">zoom.js</a>. Alt + click anywhere to zoom back out.
-					</p>
-				</section>
-
-				<section>
-					<h2>Our Buildbot History</h2>
-					<p>
-						Try it out! You can swipe through the slides and pinch your way to the overview.
+						Its page at the Docker Index indicates a Trusted Build with a
+						✓ icon, links to the GitHub repo, and the Dockerfile itself.
 					</p>
 				</section>
 
 				<section>
 					<h2>Project Structure</h2>
 					<ul>
-						<li>No order here</li>
-						<li>Or here</li>
-						<li>Or here</li>
-						<li>Or here</li>
+						<li>Base buildbot and slave are separate trusted builds</li>
+						<li>OpDemand buildbot and slave pull those images</li>
+						<li>Master shell script starts it all up</li>
 					</ul>
 				</section>
 
 				<section>
 					<h2>Dockerfiles</h2>
-					<ol>
-						<li>One is smaller than...</li>
-						<li>Two is smaller than...</li>
-						<li>Three!</li>
-					</ol>
-				</section>
-
-				<section>
-					<h2>buildbot</h2>
 					<p>
-						You can select from different transitions, like: <br>
-						<a href="?transition=cube#/transitions">Cube</a> -
-						<a href="?transition=page#/transitions">Page</a> -
-						<a href="?transition=concave#/transitions">Concave</a> -
-						<a href="?transition=zoom#/transitions">Zoom</a> -
-						<a href="?transition=linear#/transitions">Linear</a> -
-						<a href="?transition=fade#/transitions">Fade</a> -
-						<a href="?transition=none#/transitions">None</a> -
-						<a href="?#/transitions">Default</a>
+						Docker can act as a builder and read instructions from a text
+						<a href="http://docs.docker.io/en/latest/use/builder/">Dockerfile</a>
+						to automate the steps you would otherwise take manually to create
+						an image. Executing <code>docker build</code> will run your steps and commit
+						them along the way, giving you a final image.
 					</p>
 				</section>
 
 				<section>
-					<h2>buildbot-slave</h2>
-					<p>
-						Reveal.js comes with a few themes built in: <br>
-						<a href="?#/themes">Default</a> -
-						<a href="?theme=sky#/themes">Sky</a> -
-						<a href="?theme=beige#/themes">Beige</a> -
-						<a href="?theme=simple#/themes">Simple</a> -
-						<a href="?theme=serif#/themes">Serif</a> -
-						<a href="?theme=night#/themes">Night</a> <br>
-						<a href="?theme=moon.css#/themes">Moon</a> -
-						<a href="?theme=simple.css#/themes">Simple</a> -
-						<a href="?theme=solarized.css#/themes">Solarized</a>
-					</p>
-					<p>
-						<small>
-							* Theme demos are loaded after the presentation which leads to flicker. In production you should load your theme in the <code>&lt;head&gt;</code> using a <code>&lt;link&gt;</code>.
-						</small>
-					</p>
+					<h2>Dockerfile: buildbot</h2>
+					<pre><code data-trim contenteditable>
+# deis/buildbot
+
+FROM stackbrew/ubuntu:12.04
+MAINTAINER Matt Boersma &lt;matt@opdemand.com&gt;
+
+ENV HOME /home/buildbot
+
+# install buildbot dependencies from the Ubuntu .deb repository
+RUN DEBIAN_FRONTEND=noninteractive apt-get -y update
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    python-dev python-pip
+
+# install buildbot from the python package index
+RUN pip install buildbot==0.8.8
+
+# run as non-root user "buildbot"
+RUN useradd -m -d $HOME buildbot
+USER buildbot
+RUN cd $HOME && buildbot create-master --relocatable .
+ADD master.cfg $HOME/
+
+WORKDIR /home/buildbot
+ENTRYPOINT ["/usr/local/bin/twistd", "--nodaemon", "--python", "buildbot.tac"]
+
+# expose the public HTTP site and the twisted PB API interface port
+EXPOSE 8010 9989
+					</code></pre>
+				</section>
+
+				<section>
+					<h2>Dockerfile: buildbot-slave</h2>
+					<pre><code data-trim contenteditable>
+# deis/buildbot-slave
+
+FROM stackbrew/ubuntu:12.04
+MAINTAINER Matt Boersma &lt;matt@opdemand.com&gt;
+
+ENV HOME /home/buildslave
+
+# install buildbot-slave dependencies from the Ubuntu .deb repository
+RUN DEBIAN_FRONTEND=noninteractive apt-get -y update
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    git-core python-dev python-pip
+
+# install buildbot-slave from the python package index
+RUN pip install buildbot-slave==0.8.8
+
+# run as non-root user "buildslave"
+RUN useradd -m -d $HOME buildslave
+USER buildslave
+WORKDIR /home/buildslave
+
+# use an entrypoint script to read Docker link environment variables at runtime
+ADD ./entrypoint /entrypoint
+ENTRYPOINT ["/entrypoint"]
+					</code></pre>
 				</section>
 
 				<section>
 					<h2>Repo: opdemand-buildbot</h2>
-					<p>
-						Set <code>data-state="something"</code> on a slide and <code>"something"</code>
-						will be added as a class to the document element when the slide is open. This lets you
-						apply broader style changes, like switching the background.
-					</p>
+					<img src="img/github_project.png">
 				</section>
 
 				<section>
 					<h2>Dockerfile: opdemand-buildbot</h2>
-					<p>
-						Set <code>data-state="something"</code> on a slide and <code>"something"</code>
-						will be added as a class to the document element when the slide is open. This lets you
-						apply broader style changes, like switching the background.
-					</p>
-					<pre><code data-trim contenteditable style="font-size: 18px; margin-top: 20px;">
-Reveal.addEventListener( 'customevent', function() {
-	console.log( '"customevent" has fired' );
-} );
+					<pre><code data-trim contenteditable>
+# opdemand-buildbot
+
+FROM deis/buildbot
+MAINTAINER Matt Boersma &lt;matt@opdemand.com&gt;
+
+# install requirements for OpDemand customizations
+USER root
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y python-openssl
+
+# apply OpDemand customizations
+USER buildbot
+ADD buildutils.py $HOME/
+ADD ircbot.py $HOME/
+ADD master.cfg $HOME/
 					</code></pre>
 				</section>
 
 				<section>
 					<h2>Dockerfile: opdemand-buildbot-slave</h2>
-					<p>
-						Set <code>data-state="something"</code> on a slide and <code>"something"</code>
-						will be added as a class to the document element when the slide is open. This lets you
-						apply broader style changes, like switching the background.
-					</p>
+					<pre><code data-trim contenteditable>
+# opdemand-buildbot-slave
+
+FROM deis/buildbot-slave
+MAINTAINER Matt Boersma &lt;matt@opdemand.com&gt;
+
+# OpDemand customizations
+USER root
+RUN apt-get install -y libpq-dev make python-pip python-virtualenv
+
+# Go back to non-root user
+USER buildslave
+ADD local_settings.py $HOME/
+					</code></pre>
 				</section>
 
 				<section>
 					<h2>Script: start_buildbot.sh</h2>
-					<p>
-						Set <code>data-state="something"</code> on a slide and <code>"something"</code>
-						will be added as a class to the document element when the slide is open. This lets you
-						apply broader style changes, like switching the background.
-					</p>
+					<pre><code data-trim contenteditable>
+#!/bin/bash
+
+# Cleanup
+# docker kill buildbot
+# docker rm buildbot
+# docker kill buildslave1
+# docker rm buldslave1
+# docker kill buildslave2
+# docker rm buildslave2
+
+# DOCKER='docker -H tcp://127.0.0.1:4243/'
+DOCKER='docker'
+
+# start the buildbot master
+$DOCKER build -rm -t opdemand/buildbot .
+$DOCKER run -d -name buildbot -p :8010:8010 -t opdemand/buildbot
+
+# start two buildslaves
+pushd slave
+$DOCKER build -rm -t opdemand/buildbot-slave .
+$DOCKER run -d \
+  -name buildslave1 \
+  -e BUILDSLAVE_USER=buildslave1 \
+  -link buildbot:buildbot \
+  -t opdemand/buildbot-slave
+$DOCKER run -d \
+  -name buildslave2 \
+  -e BUILDSLAVE_USER=buildslave2 \
+  -link buildbot:buildbot \
+  -t opdemand/buildbot-slave
+popd
+					</code></pre>
 				</section>
 
 				<section>
 					<h2>Next: Per-Provider Slaves</h2>
 					<p>
-						Set <code>data-state="something"</code> on a slide and <code>"something"</code>
-						will be added as a class to the document element when the slide is open. This lets you
-						apply broader style changes, like switching the background.
+						Need at least one slave per supported cloud provider to run tests
+						against a live server. (And clean up after itself!)
 					</p>
+					<ul>
+						<li>Amazon EC2</li>
+						<li>Rackspace</li>
+						<li>DigitalOcean</li>
+						<li>Vagrant</li>
+					</ul>
 				</section>
+
 				<section>
 					<h2>Next: Docker-in-Docker</h2>
 					<p>
-						Set <code>data-state="something"</code> on a slide and <code>"something"</code>
-						will be added as a class to the document element when the slide is open. This lets you
-						apply broader style changes, like switching the background.
+						Our product Deis is going through a similar metamorphosis:
+						everything is a container. So our <code>git checkout</code> commands
+						in buildbot's master.cfg will need to be changed to <code>docker pull</code>
+						commands. But buildbot is already running inside Docker!
 					</p>
 				</section>
+
 				<section>
 					<h2>More Info</h2>
-					<p>
-						Set <code>data-state="something"</code> on a slide and <code>"something"</code>
-						will be added as a class to the document element when the slide is open. This lets you
-						apply broader style changes, like switching the background.
-					</p>
-				</section>
-
-				<section data-state="customevent">
-					<h2>Cus</h2>
-					<p>
-						Additionally custom events can be triggered on a per slide basis by binding to the <code>data-state</code> name.
-					</p>
-					<pre><code data-trim contenteditable style="font-size: 18px; margin-top: 20px;">
-Reveal.addEventListener( 'customevent', function() {
-	console.log( '"customevent" has fired' );
-} );
-					</code></pre>
-				</section>
-
-				<section>
-					<section data-background="#007777">
-						<h2>Slide Backgrounds</h2>
-						<p>
-							Set <code>data-background="#007777"</code> on a slide to change the full page background to the given color. All CSS color formats are supported.
-						</p>
-						<a href="#" class="image navigate-down">
-							<img width="178" height="238" src="https://s3.amazonaws.com/hakim-static/reveal-js/arrow.png" alt="Down arrow">
-						</a>
-					</section>
-					<section data-background="https://s3.amazonaws.com/hakim-static/reveal-js/arrow.png">
-						<h2>Image Backgrounds</h2>
-						<pre><code>&lt;section data-background="image.png"&gt;</code></pre>
-					</section>
-					<section data-background="https://s3.amazonaws.com/hakim-static/reveal-js/arrow.png" data-background-repeat="repeat" data-background-size="100px">
-						<h2>Repeated Image Backgrounds</h2>
-						<pre><code style="word-wrap: break-word;">&lt;section data-background="image.png" data-background-repeat="repeat" data-background-size="100px"&gt;</code></pre>
-					</section>
-				</section>
-
-				<section data-transition="linear" data-background="#4d7e65" data-background-transition="slide">
-					<h2>Background Transitions</h2>
-					<p>
-						Pass reveal.js the <code>backgroundTransition: 'slide'</code> config argument to make backgrounds slide rather than fade.
-					</p>
-				</section>
-
-				<section data-transition="linear" data-background="#8c4738" data-background-transition="slide">
-					<h2>Background Transition Override</h2>
-					<p>
-						You can override background transitions per slide by using <code>data-background-transition="slide"</code>.
-					</p>
-				</section>
-
-				<section>
-					<h2>Clever Quotes</h2>
-					<p>
-						These guys come in two forms, inline: <q cite="http://searchservervirtualization.techtarget.com/definition/Our-Favorite-Technology-Quotations">
-						&ldquo;The nice thing about standards is that there are so many to choose from&rdquo;</q> and block:
-					</p>
-					<blockquote cite="http://searchservervirtualization.techtarget.com/definition/Our-Favorite-Technology-Quotations">
-						&ldquo;For years there has been a theory that millions of monkeys typing at random on millions of typewriters would
-						reproduce the entire works of Shakespeare. The Internet has proven this theory to be untrue.&rdquo;
-					</blockquote>
-				</section>
-
-				<section>
-					<h2>Pretty Code</h2>
-					<pre><code data-trim contenteditable>
-function linkify( selector ) {
-  if( supports3DTransforms ) {
-
-    var nodes = document.querySelectorAll( selector );
-
-    for( var i = 0, len = nodes.length; i &lt; len; i++ ) {
-      var node = nodes[i];
-
-      if( !node.className ) {
-        node.className += ' roll';
-      }
-    }
-  }
-}
-					</code></pre>
-					<p>Courtesy of <a href="http://softwaremaniacs.org/soft/highlight/en/description/">highlight.js</a>.</p>
-				</section>
-
-				<section>
-					<h2>Intergalactic Interconnections</h2>
-					<p>
-						You can link between slides internally,
-						<a href="#/2/3">like this</a>.
-					</p>
-				</section>
-
-				<section>
-					<section id="fragments">
-						<h2>Fragmented Views</h2>
-						<p>Hit the next arrow...</p>
-						<p class="fragment">... to step through ...</p>
-						<ol>
-							<li class="fragment"><code>any type</code></li>
-							<li class="fragment"><em>of view</em></li>
-							<li class="fragment"><strong>fragments</strong></li>
-						</ol>
-
-						<aside class="notes">
-							This slide has fragments which are also stepped through in the notes window.
-						</aside>
-					</section>
-					<section>
-						<h2>Fragment Styles</h2>
-						<p>There's a few styles of fragments, like:</p>
-						<p class="fragment grow">grow</p>
-						<p class="fragment shrink">shrink</p>
-						<p class="fragment roll-in">roll-in</p>
-						<p class="fragment fade-out">fade-out</p>
-						<p class="fragment highlight-red">highlight-red</p>
-						<p class="fragment highlight-green">highlight-green</p>
-						<p class="fragment highlight-blue">highlight-blue</p>
-						<p class="fragment current-visible">current-visible</p>
-						<p class="fragment highlight-current-blue">highlight-current-blue</p>
-					</section>
-				</section>
-
-				<section>
-					<h2>Spectacular image!</h2>
-					<a class="image" href="http://lab.hakim.se/meny/" target="_blank">
-						<img width="320" height="299" src="http://s3.amazonaws.com/hakim-static/portfolio/images/meny.png" alt="Meny">
-					</a>
-				</section>
-
-				<section>
-					<h2>Export to PDF</h2>
-					<p>Presentations can be <a href="https://github.com/hakimel/reveal.js#pdf-export">exported to PDF</a>, below is an example that's been uploaded to SlideShare.</p>
-					<iframe id="slideshare" src="http://www.slideshare.net/slideshow/embed_code/13872948" width="455" height="356" style="margin:0;overflow:hidden;border:1px solid #CCC;border-width:1px 1px 0;margin-bottom:5px" allowfullscreen> </iframe>
-					<script>
-						document.getElementById('slideshare').attributeName = 'allowfullscreen';
-					</script>
+					<ul>
+            <li>These slides: <a href="https://github.com/mboersma/buildbot-docker-presentation">
+            	github.com/mboersma/buildbot-docker-presentation</a></li>
+            <li>Buildbot: <a href="http://buildbot.net">buildbot.net</a></li>
+            <li>Docker Index: <a href="https://index.docker.io">index.docker.io</a></li>
+            <li>Dockerfile ref: <a href="http://docs.docker.io/en/latest/use/builder/">
+            	docs.docker.io/en/latest/use/builder/</a></li>
+            <li>boot2docker: <a href="https://github.com/steeve/boot2docker">
+            	github.com/steeve/boot2docker</a></li>
+					</ul>
 				</section>
 
 			</div>
